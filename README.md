@@ -2,6 +2,8 @@
 
 在线试玩：https://grrreymane.github.io/HanePachinko/
 
+AIWANNA 平台页（外链到上面这个地址，2026-11-18 首发 1.0.0）：https://www.aiwanna.games/games/game-14c9bfee2c122d86 。上架资料在 `1gp-kit/`（game.json、封面、截图）；发布用只含已提交文件的工作目录 `D:/Minigame/_publish/HanePachinko`（`git worktree`，更新前 `git fetch` + `git -C ../_publish/HanePachinko checkout --detach origin/main`）。
+
 
 ![羽根柏青哥 Hane Pachinko](cover.png)
 

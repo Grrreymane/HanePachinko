@@ -1,0 +1,12 @@
+{
+  "title": "羽根柏青哥",
+  "description": "失业的小老鼠欠了黑猫 800 球，六晚之内还清才能走人。按住把手打钢珠，进口子开羽根，掉进 V 杯就把池子全倒给你。你打的不是普通钢珠，是自己配的一袋球：金球越打越值钱，翻倍球把袋里最大的那颗翻倍，分裂球一分二、二分四，大球赢三倍却进不了口子，破坏球撞碎钉子……每颗球身上带着一个数，能滚到上千上万，但掉进水沟会裂，裂满就碎；交不起利息，黑猫还会拿走你最好的那颗。每晚换一种场地（磁暴、分裂、翻倍、脆钉、涨潮、冰夜），局外改机器，最多装三样。竖屏像素风，手机电脑都能玩。",
+  "genre": "strategy",
+  "tags": ["柏青哥", "肉鸽", "构筑", "像素", "赌博"],
+  "maker": { "tools": ["Claude Code"], "orientation": "portrait", "session": "medium" },
+  "release": { "version": "1.0.0", "title": "首发", "notes": "首发：自己配一袋会裂的钢珠打柏青哥。8 种特殊球、6 种场地、10 样改机器零件（最多装三样）、球类图鉴。" },
+  "url": "https://grrreymane.github.io/HanePachinko/",
+  "cover": "1gp-kit/cover.png",
+  "coverBase": "1gp-kit/cover-base.png",
+  "screenshots": ["1gp-kit/shots/01-play.png", "1gp-kit/shots/02-shop.png", "1gp-kit/shots/03-ice.png", "1gp-kit/shots/04-machine.png", "1gp-kit/shots/05-dex.png"]
+}
