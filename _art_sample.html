@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8"><title>代码重绘样板</title>
+<style>
+  @font-face { font-family: "Fusion Pixel"; src: url("fonts/pixel.woff2") format("woff2"); }
+  html, body { margin: 0; background: #0b1020; }
+  canvas { display: block; image-rendering: pixelated; }
+</style></head><body>
+<canvas id="cv" width="540" height="960"></canvas>
+<script>
+// A static mock of the same board, drawn with a fixed palette, 3-tone shading, drop shadows, dithered glows and
+// wood / chrome / brass materials. Same 180x320 logical grid as the game, shown at x3. No gameplay here.
+const W = 180, H = 320, K = 3, D2R = Math.PI / 180, R = Math.round;
+const low = document.createElement('canvas'); low.width = W; low.height = H; const g = low.getContext('2d');
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const P = {
+  out: '#0b1016',
+  wood: ['#2a170c', '#48291a', '#684028', '#8a5a38', '#b07a4c'],
+  brass: ['#5a3810', '#9a6a1c', '#d8a232', '#f2cc62', '#fff2bc'],
+  chrome: ['#2a2e3c', '#585e70', '#8e96aa', '#cfd6e4', '#ffffff'],
+  felt: ['#0a1e20', '#132e2e', '#1a3c3a', '#234b47'],
+  stage: ['#09091a', '#161634', '#262654', '#3a2a6a'],
+  orange: '#ff9a3c', yellow: '#ffe14a', blue: '#5ab8ff', pink: '#ff6ab0', red: '#e04848', green: '#8aff9a',
+};
+// ---- pixel helpers
+function rect(x, y, w, h, c) { g.fillStyle = c; g.fillRect(x, y, w, h); }
+function px(x, y, c) { g.fillStyle = c; g.fillRect(x, y, 1, 1); }
+function disc(x, y, r, c) { x = R(x); y = R(y); g.fillStyle = c; if (r <= .6) { g.fillRect(x, y, 1, 1); return; } const Rr = Math.ceil(r); for (let dy = -Rr; dy <= Rr; dy++) { if (r * r - dy * dy < 0) continue; const hw = R(Math.sqrt(r * r - dy * dy)); g.fillRect(x - hw, y + dy, hw * 2 + 1, 1); } }
+function line(x1, y1, x2, y2, th, c) { const n = Math.max(1, Math.ceil(Math.hypot(x2 - x1, y2 - y1))), o = Math.floor(th / 2); g.fillStyle = c; for (let i = 0; i <= n; i++) g.fillRect(R(x1 + (x2 - x1) * i / n) - o, R(y1 + (y2 - y1) * i / n) - o, th, th); }
+function glow(x, y, r, c) { x = R(x); y = R(y); g.fillStyle = c; for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { const d = Math.hypot(dx, dy); if (d > r) continue; if (d < r * .55 ? ((dx + dy) & 1) === 0 : ((dx + 2 * dy) % 3) === 0) g.fillRect(x + dx, y + dy, 1, 1); } }
+function mix(a, b, t) { const A = parseInt(a.slice(1), 16), B = parseInt(b.slice(1), 16), c = s => Math.round(((A >> s) & 255) * (1 - t) + ((B >> s) & 255) * t); return '#' + ((1 << 24) | (c(16) << 16) | (c(8) << 8) | c(0)).toString(16).slice(1); }
+const hash = (x, y) => ((x * 374761393 + y * 668265263) ^ (x * y * 2246822519)) >>> 0;
+function woodAt(x, y) { const v = Math.sin(y * .72 + Math.sin(x * .05) * 2.4 + Math.sin(x * .011 + y * .02) * 3); return v > .86 ? (hash(x, y) % 6 ? '#35210f' : P.wood[1]) : v < -.94 ? P.wood[2] : P.wood[1]; }
+function metalBar(x, y, w, h, tones) { rect(x, y, w, h, tones[1]); rect(x, y, w, 1, tones[3]); rect(x, y, 1, h, tones[3]); rect(x, y + h - 1, w, 1, tones[0]); rect(x + w - 1, y, 1, h, tones[0]); }
+function ball(x, y) { disc(x + 1, y + 1, 3, '#06100f'); disc(x, y, 3.3, P.chrome[0]); disc(x, y, 2.4, P.chrome[2]); disc(x - .8, y - .8, 1.2, P.chrome[3]); px(R(x) - 1, R(y) - 1, P.chrome[4]); px(R(x) + 1, R(y) + 1, P.chrome[1]); }
+function pin(x, y, kind) { const t = kind === 'red' ? ['#6a1414', '#e04848', '#ffb4b4'] : [P.brass[0], P.brass[2], P.brass[4]]; disc(x + 1, y + 1, 1.4, P.felt[0]); disc(x, y, 1.4, t[1]); px(R(x) - 1, R(y) - 1, t[2]); px(R(x) + 1, R(y) + 1, t[0]); }
+function bulb(x, y, c, lit) { disc(x, y, 2.4, P.out); disc(x, y, 1.5, lit ? c : mix(c, P.out, .6)); if (lit) { px(R(x) - 1, R(y) - 1, '#ffffff'); } }
+function lamp(x, y, c, bg) { glow(x, y, 4, mix(bg, c, .35)); disc(x, y, 1.6, P.out); disc(x, y, 1, c); px(R(x), R(y) - 1, '#ffffff'); }
+
+// ---- geometry (same as the game)
+const CX = 90, CY = 134, RR = 80, BX0 = 10, BX1 = 170, GUT = 262, REL = 60 * D2R, GRAVL = 545;
+const STG = { x0: 56, x1: 124, y0: 116, y1: 150, rx0: 68, rx1: 112, ry: 112, py: 104, gx0: 83, gx1: 97, gy: 155 };
+const CUPY = 170;
+const arcPt = th => ({ x: CX + (RR - 3) * Math.cos(th), y: CY - (RR - 3) * Math.sin(th) });
+
+// ---- 1. wood cabinet with grain, bevelled opening, screws, side lamps
+for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) px(x, y, woodAt(x, y));
+for (const [kx, ky] of [[150, 290], [28, 24]]) for (let r = 2; r < 9; r += 2.2) { g.fillStyle = P.wood[0]; for (let a = 0; a < 360; a += 6) px(R(kx + r * 1.4 * Math.cos(a * D2R)), R(ky + r * Math.sin(a * D2R)), P.wood[0]); }   // knots
+rect(7, 33, 166, 234, P.wood[0]); rect(8, 34, 164, 232, P.wood[3]); rect(9, 35, 162, 230, P.wood[0]);
+for (const [x, y] of [[4, 24], [175, 24], [4, 268], [175, 268]]) { disc(x, y, 2.2, P.chrome[0]); disc(x, y, 1.5, P.chrome[2]); px(x - 1, y - 1, P.chrome[4]); px(x, y, P.chrome[0]); }   // screws
+for (let y = 44; y <= 250; y += 14) { const i = (y - 44) / 14; bulb(4, y, i % 2 ? P.blue : P.orange, i % 3 !== 1); bulb(175, y, i % 2 ? P.orange : P.blue, i % 3 !== 2); }
+
+// ---- 2. felt: stipple, vignette; wood outside the rail circle
+for (let y = 36; y < GUT; y++) for (let x = BX0; x < BX1; x++) {
+  const h = hash(x, y) % 29; let c = h === 0 ? P.felt[2] : h === 1 ? P.felt[0] : P.felt[1];
+  const d = Math.min(x - BX0, BX1 - 1 - x, y - 36, GUT - 1 - y);
+  if (d < 3 && ((x + y) & 1) === 0) c = P.felt[0]; else if (d < 7 && (x + 2 * y) % 3 === 0) c = P.felt[0]; else if (d < 12 && (x * 3 + y) % 5 === 0) c = P.felt[0];
+  px(x, y, c);
+}
+for (let y = 36; y < CY; y++) for (let x = BX0; x < BX1; x++) if (Math.hypot(x - CX, y - CY) > RR + .5) px(x, y, Math.hypot(x - CX, y - CY) < RR + 4 ? P.wood[0] : woodAt(x, y));
+// a soft light from the top lamps on the felt
+for (let y = 40; y < 90; y++) for (let x = BX0; x < BX1; x++) if (Math.hypot(x - CX, y - CY) < RR - 2 && hash(x + 7, y) % Math.max(2, Math.floor((y - 36) / 6)) === 0) px(x, y, P.felt[2]);
+
+// ---- 3. chrome rail, lamp strip, launch channel, wall guides, gutter
+for (let a = -26; a <= 192; a += .35) { const r = a * D2R, c = Math.cos(r), s = Math.sin(r); px(R(CX + (RR + 3) * c), R(CY - (RR + 3) * s), P.chrome[0]); px(R(CX + (RR + 2) * c), R(CY - (RR + 2) * s), P.chrome[1]); px(R(CX + (RR + 1) * c), R(CY - (RR + 1) * s), a > 95 && a < 150 ? P.chrome[4] : P.chrome[3]); }
+for (let a = 12; a <= 168; a += 12) { const i = a / 12; bulb(CX + (RR + 7) * Math.cos(a * D2R), CY - (RR + 7) * Math.sin(a * D2R), [P.orange, P.yellow, P.blue][i % 3], i % 4 !== 2); }
+rect(172, 150, 8, 118, P.chrome[0]); rect(173, 150, 2, 118, P.chrome[3]); rect(175, 150, 3, 118, P.chrome[1]); rect(178, 150, 1, 118, P.chrome[0]);
+{ const q = arcPt(-22 * D2R); for (let i = 0; i <= 12; i++) { const t = i / 12, x = 176 + 3 + (q.x + 3 - 179) * t, y = 178 + (q.y + 2 - 178) * t; px(R(x), R(y), P.chrome[2]); px(R(x) + 1, R(y), P.chrome[0]); } }
+for (const [x1, y1, x2, y2] of [[BX0, 150, BX0 + 14, 162], [BX1, 150, BX1 - 14, 162], [BX0, 196, BX0 + 12, 206], [BX1, 196, BX1 - 12, 206]]) { line(x1 + 1, y1 + 1, x2 + 1, y2 + 1, 2, P.felt[0]); line(x1, y1, x2, y2, 2, P.chrome[2]); line(x1, y1 - 1, x2, y2 - 1, 1, P.chrome[4]); }
+rect(BX0, GUT - 7, BX1 - BX0, 7, '#06100f'); rect(BX0, GUT - 7, BX1 - BX0, 1, P.chrome[1]); rect(BX0, GUT - 6, BX1 - BX0, 1, P.chrome[0]);
+
+// ---- 4. pins (the game's base layout) + one house pin
+const PINS = [];
+const ok = (x, y) => !(y < CY && Math.hypot(x - CX, y - CY) > RR - 8) && x >= BX0 + 8 && x <= BX1 - 8;
+for (let r = 0; r < 2; r++) { const y = 78 + r * 14, off = (r & 1) ? 8 : 0; for (let k = 0; k < 11; k++) { const x = 18 + off + k * 16; if (ok(x, y) && Math.abs(x - CX) > 3) PINS.push([x, y]); } }
+for (const [x, y] of [[47, 112], [26, 186], [50, 186], [72, 186], [38, 202], [62, 202], [40, 216], [56, 216]]) { PINS.push([x, y]); PINS.push([180 - x, y]); }
+PINS.push([84, 226], [96, 226]);
+const PARTS = [[150, 182], [66, 206]];   // windmill, tulip: pins under them go
+for (const [x, y] of PINS) if (PARTS.every(([a, b]) => Math.hypot(a - x, b - y) >= 9)) pin(x, y);
+pin(104, 196, 'red');
+
+// ---- 5. the stage: shrine with lantern, brass pillars, tiled roof, feathered wings, V chalice on a lit lane
+rect(54, 110, 72, 48, '#06100f');                                                        // drop shadow
+for (let y = STG.ry + 1; y < STG.y1; y++) { const t = (y - STG.ry) / (STG.y1 - STG.ry); for (let x = STG.x0 + 2; x < STG.x1 - 2; x++) { const lv = t < .3 ? 2 : t < .6 ? (hash(x, y) % 2 ? 2 : 1) : t < .85 ? 1 : (hash(x, y) % 2 ? 1 : 0); px(x, y, P.stage[lv]); } }
+for (let x = STG.rx0; x <= STG.rx1; x++) { const yr = STG.ry - 8 * (1 - Math.abs(x - CX) / 22); for (let y = Math.ceil(yr) + 3; y <= STG.ry; y++) px(x, y, P.stage[3]); }   // gable
+for (let y = 142; y < 150; y += 1) for (let x = 59; x < 121; x += 2) if ((x + y) % 4 === 0) px(x, y, P.stage[3]);                                         // floor sparkle
+glow(CX, 124, 9, mix(P.stage[2], P.orange, .45)); disc(CX, 124, 4.5, P.out); disc(CX, 124, 3.5, '#ffb347'); disc(CX - .5, 123, 2, P.brass[4]); px(CX - 1, 122, '#ffffff');   // lantern
+for (let i = 0; i < 6; i++) { const x = 62 + i * 11; disc(x, 147, 1.4, P.out); disc(x, 147, .9, i % 2 ? P.yellow : P.orange); }                                             // lane LEDs
+for (const [x, lit] of [[STG.x0 - 2, 1], [STG.x1 - 2, 0]]) { rect(x, STG.y0, 4, STG.y1 - STG.y0, P.brass[1]); rect(x + (lit ? 0 : 3), STG.y0, 1, STG.y1 - STG.y0, P.brass[3]); rect(x + (lit ? 3 : 0), STG.y0, 1, STG.y1 - STG.y0, P.brass[0]); rect(x - 1, STG.y0 - 2, 6, 3, P.brass[2]); rect(x - 1, STG.y0 - 2, 6, 1, P.brass[4]); }   // pillars + capitals
+for (let x = STG.rx0 - 2; x <= STG.rx1 + 2; x++) { const yr = R(STG.ry - 8 * (1 - Math.min(1, Math.abs(x - CX) / 22))); rect(x, yr, 1, 4, P.brass[2]); px(x, yr, P.brass[4]); px(x, yr + 3, P.brass[0]); if ((x - STG.rx0) % 4 === 0) rect(x, yr + 1, 1, 2, P.brass[1]); }   // tiles
+for (const [x, y] of [[65, 112], [64, 111], [115, 112], [116, 111]]) px(x, y, P.brass[3]);                                                                      // eave curls
+disc(CX, STG.py - 2, 1.6, P.out); disc(CX, STG.py - 2, 1, P.brass[4]); px(CX, STG.py - 4, P.yellow);                                                              // ridge gem
+for (const [x1, y1, x2, y2] of [[STG.x0, STG.y1, STG.gx0, STG.gy], [STG.x1, STG.y1, STG.gx1, STG.gy]]) { line(x1, y1 + 1, x2, y2 + 1, 3, P.brass[0]); line(x1, y1, x2, y2, 2, P.brass[2]); line(x1, y1 - 1, x2, y2 - 1, 1, P.brass[4]); }   // floor slopes
+glow(CX, STG.gy + 2, 5, mix(P.stage[1], P.yellow, .4)); rect(STG.gx0 + 1, STG.gy + 2, STG.gx1 - STG.gx0 - 2, 1, P.yellow);                                      // slot lamp
+function wing(hx, hy, ang, len, open) {
+  const tx = hx + Math.cos(ang) * len, ty = hy + Math.sin(ang) * len, nx = -Math.sin(ang), ny = Math.cos(ang);
+  line(hx + 1, hy + 1, tx + 1, ty + 1, 3, '#06100f'); line(hx, hy, tx, ty, 4, P.out);
+  line(hx, hy, tx, ty, 2, open ? '#ffb060' : P.brass[2]); line(hx - nx, hy - ny, tx - nx, ty - ny, 1, open ? '#ffe2b0' : P.brass[4]);
+  for (let t = .35; t < 1; t += .3) px(R(hx + (tx - hx) * t), R(hy + (ty - hy) * t), open ? P.orange : P.brass[0]);
+  disc(hx, hy, 2.2, P.out); disc(hx, hy, 1.5, P.chrome[2]); px(hx - 1, hy - 1, P.chrome[4]);
+}
+wing(STG.x0, STG.y0, -118 * D2R, 13, true); wing(STG.x1, STG.y0, -62 * D2R, 13, true);
+glow(42, 94, 10, mix(P.felt[1], P.orange, .22)); glow(138, 94, 10, mix(P.felt[1], P.orange, .22));                                                              // open-wing lane glow
+rect(60, CUPY - 10, 60, 14, P.stage[0]); rect(60, CUPY - 10, 60, 1, P.chrome[1]); rect(60, CUPY + 3, 60, 1, P.chrome[1]); for (let x = 63; x < 118; x += 4) px(x, CUPY + 2, (x >> 2) % 3 ? P.stage[2] : P.yellow);   // cup lane
+{ const x = 82, y = CUPY; glow(x, y - 3, 10, mix(P.stage[0], P.yellow, .4)); rect(x - 8, y - 9, 16, 11, P.out); rect(x - 7, y - 8, 14, 10, P.brass[2]); rect(x - 7, y - 8, 1, 10, P.brass[4]); rect(x + 6, y - 8, 1, 10, P.brass[0]); rect(x - 7, y + 1, 14, 1, P.brass[0]);
+  rect(x - 5, y - 8, 10, 8, P.stage[0]); rect(x - 4, y - 7, 1, 6, P.stage[2]); line(x - 3, y - 7, x, y - 2, 1, P.yellow); line(x + 3, y - 7, x, y - 2, 1, P.yellow);
+  px(x + 9, y - 11, '#ffffff'); px(x + 8, y - 11, P.yellow); px(x + 10, y - 11, P.yellow); px(x + 9, y - 12, P.yellow); px(x + 9, y - 10, P.yellow); }                                   // V chalice + sparkle
+
+// ---- 6. pockets with neon rims and lamps, a dead hole, a windmill and a tulip (the parts, shaded)
+function pocket(x, y, w, col, kind) {
+  const x0 = R(x - w / 2), y0 = y - 3; lamp(x, y0 - 8, P.yellow, P.felt[1]);
+  rect(x0 - 2, y0, w + 4, 15, '#06100f'); rect(x0 - 2, y0 - 1, w + 4, 14, P.out); rect(x0 - 1, y0, w + 2, 13, P.chrome[1]); rect(x0 - 1, y0, 1, 13, P.chrome[3]); rect(x0 + w, y0, 1, 13, P.chrome[0]);
+  rect(x0, y0 + 2, w, 11, '#07100f'); rect(x0 - 1, y0, w + 2, 1, col); rect(x0 - 1, y0 + 1, w + 2, 1, mix(col, P.out, .4));
+  for (const sx of [x0 - 3, x0 + w + 1]) { rect(sx, y0 - 4, 2, 5, P.out); rect(sx, y0 - 4, 2, 4, col); px(sx, y0 - 4, '#ffffff'); }
+  if (kind === 's') { px(R(x) - 2, y0 + 10, col); px(R(x) + 2, y0 + 10, col); } else px(R(x), y0 + 10, col);
+}
+pocket(90, 236, 9, P.orange, 'c'); pocket(48, 226, 8, P.blue, 's'); pocket(132, 226, 8, P.blue, 's');
+{ const x = 30, y = 216; glow(x, y, 8, mix(P.felt[1], P.red, .35)); disc(x, y, 5.2, '#6a1414'); disc(x, y, 4.6, P.red); disc(x, y, 3.6, '#000000'); disc(x - 1, y + 1, 1.2, '#1a0a0a'); px(x - 2, y - 2, '#ffb4b4'); }   // dead hole
+{ const [x, y] = PARTS[0]; disc(x + 1, y + 1, 8.5, '#06100f'); disc(x, y, 8.5, P.out); disc(x, y, 7.5, P.felt[0]);
+  for (const a of [0, 90, 180, 270]) { const r = (a + 20) * D2R, tx = x + Math.cos(r) * 7, ty = y + Math.sin(r) * 7; line(x, y, tx, ty, 3, P.out); line(x, y, tx, ty, 2, P.chrome[2]); line(x, y, tx, ty, 1, P.chrome[4]); disc(tx, ty, 1.4, P.red); }
+  disc(x, y, 2.2, P.out); disc(x, y, 1.5, P.brass[3]); px(x, y, '#ffffff'); }                                                                                  // windmill
+{ const [x, y] = PARTS[1]; glow(x, y + 2, 7, mix(P.felt[1], P.pink, .25)); for (const s of [-1, 1]) { line(x + s * 5, y + 6, x + s * 5, y - 6, 3, P.out); line(x + s * 5, y + 6, x + s * 5, y - 6, 2, P.pink); line(x + s * 5 - (s > 0 ? 1 : 0), y + 5, x + s * 5 - (s > 0 ? 1 : 0), y - 5, 1, '#ffb4d8'); disc(x + s * 5, y - 6, 1.8, P.out); disc(x + s * 5, y - 6, 1.1, '#ffd0e8'); }
+  disc(x, y + 5, 3.8, P.out); disc(x, y + 5, 2.8, '#8a2a5a'); disc(x - 1, y + 4, 1.2, P.pink); }                                                                 // tulip
+
+// ---- 7. balls in play and the aim line
+ball(49, 101); ball(100, 109); ball(88, 136); ball(90, 160); ball(48, 212); ball(150, 150);
+{ const q = arcPt(REL), v = 30 + 170 * .45, vx = -Math.sin(REL) * v, vy = -Math.cos(REL) * v; let k = 0, last = q;
+  for (let t = 0; t < 1.6; t += .06) { const x = q.x + vx * t, y = q.y + vy * t + .5 * GRAVL * t * t; if (y > 96 || x < BX0 + 4) break; if (k++ % 2) px(R(x), R(y), '#b8a040'); last = { x, y }; }
+  disc(last.x, last.y, 4, P.out); disc(last.x, last.y, 3.2, P.yellow); disc(last.x, last.y, 2, P.felt[1]); }
+ball(arcPt(-10 * D2R).x, arcPt(-10 * D2R).y);
+
+// ---- 8. HUD: brass plaque on top; chrome tray, brass handle below
+rect(0, 0, W, 17, P.wood[0]); rect(1, 1, W - 2, 15, P.brass[1]); rect(2, 2, W - 4, 13, '#1a1410'); rect(1, 1, W - 2, 1, P.brass[3]); rect(1, 15, W - 2, 1, P.brass[0]);
+for (const x of [4, 175]) { disc(x, 8, 1.3, P.brass[3]); px(x, 8, P.brass[0]); }
+{ const bx = 94, bw = 56, f = .42; rect(bx - 1, 4, bw + 2, 9, P.out); rect(bx, 5, bw, 7, '#162440'); rect(bx, 5, R(bw * f), 7, '#f0a048'); rect(bx, 5, R(bw * f), 1, '#ffd090'); for (let x = bx + 7; x < bx + bw; x += 7) px(x, 11, '#0b1016');
+  for (const [i, j, c] of [[2, 0, 0], [1, 1, 0], [0, 2, 0], [1, 3, 0], [2, 4, 0]]) px(84 + i, 4 + j, '#dfe6ff'); px(87, 4, '#dfe6ff'); px(87, 8, '#dfe6ff');
+  const sx = 153, sy = 8; disc(sx, sy, 1.6, P.yellow); for (const [dx, dy] of [[-3, 0], [3, 0], [0, -3], [0, 3], [-2, -2], [2, -2], [-2, 2], [2, 2]]) px(sx + dx, sy + dy, P.yellow); }
+rect(165, 3, 4, 6, P.out); for (const [x, y] of [[167, 3], [166, 4], [167, 4], [165, 5], [166, 5], [167, 5], [165, 6], [166, 6], [167, 6], [166, 7], [167, 7], [167, 8]]) px(x, y, '#ffffff');
+rect(14, 274, 152, 12, P.out); rect(15, 275, 150, 10, P.wood[0]); rect(17, 279, 146, 3, P.brass[1]); rect(17, 279, 146, 1, P.brass[3]); for (let i = 0; i <= 10; i++) rect(20 + i * 14, 277, 1, 7, P.wood[2]);
+{ const kx = 83, ky = 280; disc(kx + 1, ky + 1, 7, '#06100f'); disc(kx, ky, 7, P.out); disc(kx, ky, 6, P.chrome[1]); disc(kx, ky, 4.6, P.chrome[2]); disc(kx - 1.6, ky - 1.6, 2, P.chrome[3]); px(kx - 2, ky - 2, '#ffffff'); disc(kx, ky, 1.6, P.red); px(kx, ky - 1, '#ffb4b4'); }
+rect(8, 302, 48, 15, '#06100f'); rect(8, 301, 48, 15, P.out); rect(9, 302, 46, 13, P.chrome[1]); rect(9, 302, 46, 1, P.chrome[3]); rect(10, 304, 44, 10, '#141420');
+for (let i = 0; i < 5; i++) { const x = 15 + i * 7, y = 310 - (i % 2) * 2; disc(x, y, 2.6, P.chrome[0]); disc(x, y, 2, P.chrome[2]); px(x - 1, y - 1, '#ffffff'); }
+{ const [x, y, w, h] = [118, 298, 50, 18]; rect(x + 1, y + 1, w, h, '#06100f'); rect(x, y, w, h, P.out); rect(x + 1, y + 1, w - 2, h - 2, P.brass[1]); rect(x + 1, y + 1, w - 2, h - 4, P.brass[2]); rect(x + 2, y + 2, w - 4, 1, P.brass[4]); rect(x + 1, y + 1, 1, h - 2, P.brass[3]); }   // 收摊 button
+
+// ---- 9. upscale, then crisp text with the game's pixel font
+async function finish() {
+  try { await document.fonts.load('24px "Fusion Pixel"'); await document.fonts.load('36px "Fusion Pixel"'); } catch (e) { }
+  ctx.imageSmoothingEnabled = false; ctx.drawImage(low, 0, 0, W, H, 0, 0, W * K, H * K);
+  const T = (s, x, y, size, col, align = 'center') => { ctx.font = size + 'px "Fusion Pixel"'; ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillStyle = P.out; for (const [dx, dy] of [[-3, 0], [3, 0], [0, -3], [0, 3], [-3, -3], [3, -3], [-3, 3], [3, 3]]) ctx.fillText(s, x * K + dx, y * K + dy); ctx.fillStyle = col; ctx.fillText(s, x * K, y * K); };
+  T('第2晚', 22, 8.5, 24, P.brass[4]); T('上缴 15', 63, 8.5, 24, P.green);
+  T('轻', 7, 280, 24, '#dff6ff'); T('重', 173, 280, 24, '#ff9a9a');
+  T('托盘', 32, 295, 24, '#dff6ff'); T('80', 74, 309, 36, P.green); T('收摊', 143, 306, 24, '#ffffff');
+  document.title = 'ready';
+}
+finish();
+</script></body></html>
