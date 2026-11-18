@@ -2,7 +2,7 @@
 // when nothing happens, and keeps a diary. Load inside the game closure:  __g(await (await fetch('_human.js')).text())
 //   __human(runs, { careful: true, stages: 3 })  ->  [{ end, diary: [...] }]
 window.__human = function (runs, opt = {}) {
-  const diaries = [], pot0 = pot, keep = JSON.stringify(META); META.bank = 0; META.lv = {}; META.ach = {};
+  const diaries = [], pot0 = pot, keep = JSON.stringify(META); META.bank = 0; META.lv = {}; META.ach = {}; META.eq = [];
   const VAL = { gate: 6, lucky: 5, gold: 4, split: 4, big: 3, wreck: 2, bomb: 2, wing: 3 }, value = c => VAL[c.id] || 0;   // a Balatro player reads the card and guesses
   for (let r = 0; r < runs; r++) {
     pot = POT0; resetRun(); let steps = 0; const diary = []; let aim = opt.aim !== undefined ? opt.aim : .45 + Math.random() * .3, tapCd = 0, taps = 0, nightFrames = 0, nightStartTray = tray, big = 0, bets = {}, c0 = { ...STAT }, burst = 0, rest = 0, bought = [], boredom = 0;
@@ -38,5 +38,5 @@ window.__human = function (runs, opt = {}) {
     if (state === 'over') diary.push('  被带走 欠' + debt + (payMsg === '到期了' ? '（到期）' : ''));
     diaries.push({ end: state + ' stage' + stage + ' n' + night + ' ' + Math.round(steps / 60) + 's', diary });
   }
-  pot = pot0; const o = JSON.parse(keep); META.bank = o.bank; META.lv = o.lv; META.ach = o.ach; save('meta', META); save('pot', pot); firing = false; bet = 1; return diaries;
+  pot = pot0; const o = JSON.parse(keep); META.bank = o.bank; META.lv = o.lv; META.ach = o.ach; META.eq = o.eq || []; save('meta', META); save('pot', pot); firing = false; bet = 1; return diaries;
 };
