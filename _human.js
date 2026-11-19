@@ -10,7 +10,7 @@ window.__human = function (runs, opt = {}) {
       const stage0 = STAT.stage - c0.stage, v0 = STAT.v - c0.v;
       let mood = v0 ? '爽' : big >= 20 ? '有点意思' : stage0 >= 15 ? '平' : '闷';
       if (!v0 && big < 20) boredom++; else boredom = 0; if (boredom >= 3) mood += '（连闷 ' + boredom + ' 晚，想关游戏）';
-      diary.push('第' + night + '晚(余' + nightsLeft() + ') ' + how + ' ' + zoneOf(aim).n + ' ' + nightStartTray + '→' + tray + ' 押' + Object.keys(bets).join('/') + ' 进台' + stage0 + ' 过门' + NS.gates + ' 漏' + NS.leak + ' V' + v0 + ' 好球' + BAG.filter(o => o.k !== 'plain' && o.k !== 'lead').length + ' 架' + RACK.length + ' 碎' + NS.broke + (NS.bit ? ' 猫叼' + NS.bit : '') + ' 最大×' + Math.max(...BAG.map(o => o.v || 1)) + ' 最大' + big + ' ' + Math.round(nightFrames / 60) + 's ' + mood + (bought.length ? ' 买' + bought.join(',') : ''));
+      diary.push('第' + night + '晚(余' + nightsLeft() + ') ' + how + ' ' + zoneOf(aim).n + ' ' + nightStartTray + '→' + tray + ' 押' + Object.keys(bets).join('/') + ' 进台' + stage0 + ' 过门' + NS.gates + ' 漏' + NS.leak + ' V' + v0 + ' 好球' + BAG.filter(o => o.k !== 'plain' && o.k !== 'lead').length + ' 架' + RACK.length + ' 碎' + NS.broke + (NS.bit ? ' 猫叼' + NS.bit : '') + ' 最大×' + (NS.top || 1) + ' 利' + quota + ' 最大' + big + ' ' + Math.round(nightFrames / 60) + 's ' + mood + (bought.length ? ' 买' + bought.join(',') : ''));
       bought = [];
     };
     let lastState = state;
@@ -19,7 +19,7 @@ window.__human = function (runs, opt = {}) {
       else if (state === 'brief') { nightFrames = 0; nightStartTray = tray; big = 0; bets = {}; c0 = { ...STAT }; if (opt.careful && opt.aim === undefined) aim = (tray < quota * 2 && pot < 150) ? .97 : .3; startNight(); }   // the careful player grinds the cash lane when the interest is short and the pot is small, else gambles on the wings
       else if (state === 'summary') { closeNight(won ? '还清' : '天亮'); go('pay'); }
       else if (state === 'loan') { diary.push('  借 ' + loanAmt + ' 欠 ' + (debt + quota + loanAmt)); takeLoan(); }
-      else if (state === 'win') { diary.push('  还清第' + stage + '张 剩' + tray + (tray >= debtOf() ? ' 再借' : ' 走人')); if (tray >= debtOf()) nextStage(); else break; }
+      else if (state === 'win') { diary.push('  还清第' + stage + '张 剩' + tray + ' 再借'); nextStage(); }   // the leftover is banked either way, so a player always takes the next IOU
       else if (state === 'pick') { if (!opt.noshop && BAG.some(o => o.cursed) && tray - tossCost() >= quota * 2 + 20) toss(); const c = opt.noshop ? null : picks.filter(c => tray - costOf(c) >= (opt.greedy ? quota : quota + 15) && (!c.place || (slotsFor(c).length && PLACED.length < SLOT_MAX)) && value(c) >= 3).sort((a, b) => value(b) / costOf(b) - value(a) / costOf(a))[0]; if (c) { bought.push(c.name); applyPick(c); } else afterShop(); }
       else if (state === 'pack') {   // the best balls by printed value go in the bag, the rest on the rack
         const sc = o => (o.k === 'lead' ? (hasGate() ? 4 : 0) : VAL[o.k] || 1) * (o.v || 1), all = BAG.filter(movable).concat(RACK).sort((a, b) => sc(b) - sc(a)), fix = BAG.filter(o => o.cursed), inb = all.filter(o => sc(o) > 0).slice(0, BAG0 - fix.length);
